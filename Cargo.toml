@@ -1,0 +1,18 @@
+[package]
+name = "d7sneakers"
+version = "0.1.0"
+authors = ["Lars Baumgaertner <1264131+gh0st42@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bp7 = "0.8.1"
+clap = "3.0.0-beta.2"
+anyhow = "1.0.41"
+log = "0.4.14"
+pretty_env_logger = "0.4.0"
+sanitize-filename-reader-friendly = "2.1.0"
+rusqlite = "0.25.3"
+walkdir = "2.3.2"
+bitflags = "1.2.1"
