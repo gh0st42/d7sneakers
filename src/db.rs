@@ -14,12 +14,12 @@ bitflags! {
         const REASSEMBLY_PENDING =       0b00000100;
         const CONTRAINDICATED =          0b00001000;
         const LOCAL_ENDPOINT =           0b00010000;
+        const DELETED =                  0b00100000;
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BundleEntry {
-    id: i32,
     src_name: Option<String>,
     src_service: Option<String>,
     dst_name: Option<String>,
@@ -27,9 +27,27 @@ pub struct BundleEntry {
     timestamp: u64,
     seqno: u64,
     lifetime: u64,
+    pub size: u64,
 }
 
-#[derive(Debug)]
+/// Create from a given bundle.
+impl From<&Bundle> for BundleEntry {
+    fn from(bundle: &Bundle) -> Self {
+        //let size = bundle.to_cbor().len() as u64;
+        BundleEntry {
+            src_name: bundle.primary.source.node(),
+            src_service: bundle.primary.source.service_name(),
+            dst_name: bundle.primary.destination.node(),
+            dst_service: bundle.primary.destination.service_name(),
+            timestamp: bundle.primary.creation_timestamp.dtntime(),
+            seqno: bundle.primary.creation_timestamp.seqno(),
+            lifetime: bundle.primary.lifetime.as_secs(),
+            size: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct D7DB {
     db_file: String,
 }
@@ -73,7 +91,8 @@ impl D7DB {
                       dst_service     TEXT,
                       timestamp       INTEGER,
                       seqno           INTEGER,
-                      lifetime        INTEGER
+                      lifetime        INTEGER,
+                      size            INTEGER
                       )",
             [],
         )?;
@@ -132,7 +151,6 @@ impl D7DB {
         let mut rows = stmt.query([b_idx])?;
         let row = rows.next()?.expect("bundle id not found in database");
         let be = BundleEntry {
-            id: row.get(0)?,
             src_name: row.get(1)?,
             src_service: row.get(2)?,
             dst_name: row.get(3)?,
@@ -140,27 +158,58 @@ impl D7DB {
             timestamp: row.get(5)?,
             seqno: row.get(6)?,
             lifetime: row.get(7)?,
+            size: row.get(8)?,
         };
         Ok(be)
     }
-    pub fn insert(&self, bndl: &Bundle) -> Result<()> {
+    pub fn insert_bulk(&self, bes: &[(String, BundleEntry)]) -> Result<()> {
+        let mut conn = self.get_connection()?;
+        //conn.execute("PRAGMA synchronous = OFF;", [])?;
+        //conn.execute("PRAGMA journal_mode = MEMORY;", [])?;
+        let tx = conn.transaction()?;
+
+        {
+            let mut stmt_bundles = tx.prepare("INSERT INTO bundles (src_name, src_service, dst_name, dst_service, timestamp, seqno, lifetime, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")?;
+            let mut stmd_contraints = tx.prepare(
+                "INSERT INTO constraints (
+                constraints) VALUES (?1)",
+            )?;
+            let mut stmt_idx = tx.prepare(
+                "INSERT INTO bids ( bid, bundle_idx, constraints_idx) VALUES ( ?1, ?2, ?3) ",
+            )?;
+            for (bid, be) in bes {
+                stmt_bundles.execute(params![
+                    be.src_name,
+                    be.src_service,
+                    be.dst_name,
+                    be.dst_service,
+                    be.timestamp,
+                    be.seqno,
+                    be.lifetime,
+                    be.size,
+                ])?;
+
+                let last_bundle_id = tx.last_insert_rowid();
+                stmd_contraints.execute(params![0])?;
+                let last_constraint_id = tx.last_insert_rowid();
+                stmt_idx.execute(params![bid, last_bundle_id, last_constraint_id])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn insert(&self, bndl: &Bundle, size: u64) -> Result<()> {
         if self.exists(&bndl.id()) {
             return Ok(());
         }
-        let conn = self.get_connection()?;
+        let mut conn = self.get_connection()?;
 
-        let be = BundleEntry {
-            id: 0,
-            src_name: bndl.primary.source.node(),
-            src_service: bndl.primary.source.service_name(),
-            dst_name: bndl.primary.destination.node(),
-            dst_service: bndl.primary.destination.service_name(),
-            timestamp: bndl.primary.creation_timestamp.dtntime(),
-            seqno: bndl.primary.creation_timestamp.seqno(),
-            lifetime: bndl.primary.lifetime.as_secs(),
-        };
+        let tx = conn.transaction()?;
 
-        conn.execute(
+        let mut be: BundleEntry = bndl.into();
+        be.size = size;
+
+        tx.execute(
             "INSERT INTO bundles (                
                 src_name,
                 src_service,
@@ -168,7 +217,8 @@ impl D7DB {
                 dst_service,
                 timestamp,
                 seqno,
-                lifetime) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                lifetime,
+                size) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 be.src_name,
                 be.src_service,
@@ -176,22 +226,25 @@ impl D7DB {
                 be.dst_service,
                 be.timestamp,
                 be.seqno,
-                be.lifetime
+                be.lifetime,
+                be.size
             ],
         )?;
-        let last_bundle_id = conn.last_insert_rowid();
+        let last_bundle_id = tx.last_insert_rowid();
 
-        conn.execute(
+        tx.execute(
             "INSERT INTO constraints (                
                 constraints) VALUES (?1)",
             params![0],
         )?;
-        let last_constraint_id = conn.last_insert_rowid();
+        let last_constraint_id = tx.last_insert_rowid();
 
-        conn.execute(
+        tx.execute(
             "INSERT INTO bids ( bid, bundle_idx, constraints_idx) VALUES ( ?1, ?2, ?3) ",
             params![bndl.id(), last_bundle_id, last_constraint_id],
         )?;
+
+        tx.commit()?;
         Ok(())
     }
     pub fn exists(&self, bid: &str) -> bool {
@@ -225,6 +278,16 @@ impl D7DB {
             };
         }
         false
+    }
+    pub fn len(&self) -> usize {
+        let conn = self.get_connection().unwrap();
+        let mut stmt = conn.prepare("SELECT COUNT(*) FROM bids").unwrap();
+        let mut rows = stmt.query([]).unwrap();
+        rows.next()
+            .expect("unable to count db entries")
+            .unwrap()
+            .get(0)
+            .expect("")
     }
     /// returns the list of bundle ids in the database
     pub fn ids(&self) -> Vec<String> {
@@ -322,6 +385,8 @@ impl D7DB {
         res
     }
     pub fn sync_with_fs(&self, fs: &crate::D7sFs) -> Result<()> {
+        info!("syncing db to fs");
+
         /*let mut stmt = self
             .conn
             .prepare("SELECT COUNT(*) FROM bundles WHERE src_name = ? AND src_service = ? AND timestamp = ? AND seqno = ?")
@@ -343,11 +408,16 @@ impl D7DB {
         let mut stmt = conn.prepare("SELECT * FROM bids")?;
         //dbg!(name, service, timestamp, seqno);
         let mut rows = stmt.query([])?;
+
+        let all_bids = fs.all_bids();
+
         while let Some(row) = rows.next()? {
             let bid: String = row.get(1)?;
             //let bundle_idx: usize = row.get(2)?;
-            if let Some(bundle_path) = fs.find_file_by_bid(&bid) {
-                debug!("path still exists: {}", bundle_path.to_string_lossy());
+            //if let Some(bundle_path) = fs.find_file_by_bid(&bid) {
+            //debug!("path still exists: {}", bundle_path.to_string_lossy())
+            if all_bids.contains(&bid) {
+                debug!("bid {} present in filesystem", bid);
             } else {
                 warn!(
                     "bundle {} is missing in filesystem, removing from database",
@@ -371,8 +441,8 @@ mod tests {
         let db = D7DB::open("/tmp/d7s.db").unwrap();
 
         assert!(db.exists(&test_bundle.id()) == false);
-        db.insert(&test_bundle).unwrap();
+        db.insert(&test_bundle, 20).unwrap();
         assert!(db.exists(&test_bundle.id()) == true);
-        db.insert(&test_bundle).unwrap();
+        db.insert(&test_bundle, 20).unwrap();
     }
 }

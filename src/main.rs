@@ -101,14 +101,13 @@ fn main() -> Result<()> {
     // debug!("Value for config: {}", opts.config);
     debug!("Value for basedir: {}", opts.basedir);
 
-    let sneakers = SneakerWorld::new(&opts.basedir);
-    sneakers.fs.setup()?;
+    let sneakers = SneakerWorld::open(&opts.basedir)?;
 
     match opts.subcmds {
         SubCommand::Add(a) => {
             if let Some(input) = a.hex {
-                let bndl = sneakers.fs.import_hex(&input)?;
-                sneakers.db.insert(&bndl)?;
+                let (bndl, bundle_size) = sneakers.fs.import_hex(&input)?;
+                sneakers.db.insert(&bndl, bundle_size)?;
             } else if let Some(path) = a.path {
                 sneakers.import_dir(&path, a.recursive)?;
             }
