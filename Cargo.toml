@@ -8,7 +8,7 @@ categories = ["command-line-utilities", "network-programming"]
 keywords = ["peer2peer", "dtn"]
 exclude = [".vscode/", ".travis.yml"]
 repository    = "https://github.com/gh0st42/d7sneakers"
-
+license = "MIT OR Apache-2.0"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -23,5 +23,4 @@ sanitize-filename-reader-friendly = "2.1.0"
 rusqlite = "0.25.3"
 walkdir = "2.3.2"
 bitflags = "1.2.1"
-jwalk = "0.6.0"
-crossbeam-deque = "0.8.0"
+#crossbeam-deque = "0.8.0"
