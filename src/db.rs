@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use anyhow::{bail, Result};
 use bp7::Bundle;
 use log::{debug, error, info, warn};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction};
 
 use bitflags::bitflags;
 
@@ -18,7 +18,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BundleEntry {
     src_name: Option<String>,
     src_service: Option<String>,
@@ -120,21 +120,27 @@ impl D7DB {
         if !self.exists(bid) {
             bail!("no such database entry found");
         }
-        let conn = self.get_connection()?;
-        if let Ok(idx) = self.find_bundle_number_by_bid(bid) {
-            let mut stmt = conn.prepare("DELETE FROM bids WHERE id = ?")?;
+        let mut conn = self.get_connection()?;
+        conn.pragma_update(None, "synchronous", &"OFF".to_string())?;
+        let tx = conn.transaction()?;
+        if let Ok(idx) = self.find_bundle_number_by_bid(&tx, bid) {
+            let mut stmt = tx.prepare("DELETE FROM bids WHERE id = ?")?;
             stmt.execute([idx.0])?;
-            let mut stmt = conn.prepare("DELETE FROM bundles WHERE id = ?")?;
+            let mut stmt = tx.prepare("DELETE FROM bundles WHERE id = ?")?;
             stmt.execute([idx.1])?;
-            let mut stmt = conn.prepare("DELETE FROM constraints WHERE id = ?")?;
+            let mut stmt = tx.prepare("DELETE FROM constraints WHERE id = ?")?;
             stmt.execute([idx.2])?;
         }
+        tx.commit()?;
         Ok(())
     }
-    pub fn find_bundle_number_by_bid(&self, bid: &str) -> Result<(usize, usize, usize)> {
-        let conn = self.get_connection()?;
+    pub fn find_bundle_number_by_bid(
+        &self,
+        tx: &Transaction,
+        bid: &str,
+    ) -> Result<(usize, usize, usize)> {
         let mut stmt =
-            conn.prepare("SELECT id, bundle_idx, constraints_idx FROM bids WHERE bid = ?")?;
+            tx.prepare("SELECT id, bundle_idx, constraints_idx FROM bids WHERE bid = ?")?;
         let mut rows = stmt.query([bid])?;
         while let Some(row) = rows.next()? {
             let idx: usize = row.get(0)?;
@@ -145,27 +151,32 @@ impl D7DB {
         bail!("bundle ID not found in database");
     }
     pub fn get_bundle_entry(&self, bid: &str) -> Result<BundleEntry> {
-        let (_, b_idx, _) = self.find_bundle_number_by_bid(bid)?;
-        let conn = self.get_connection()?;
-        let mut stmt = conn.prepare("SELECT * FROM bundles WHERE id = ?")?;
-        let mut rows = stmt.query([b_idx])?;
-        let row = rows.next()?.expect("bundle id not found in database");
-        let be = BundleEntry {
-            src_name: row.get(1)?,
-            src_service: row.get(2)?,
-            dst_name: row.get(3)?,
-            dst_service: row.get(4)?,
-            timestamp: row.get(5)?,
-            seqno: row.get(6)?,
-            lifetime: row.get(7)?,
-            size: row.get(8)?,
-        };
+        let mut conn = self.get_connection()?;
+        conn.pragma_update(None, "synchronous", &"OFF".to_string())?;
+        let tx = conn.transaction()?;
+        let mut be: BundleEntry = Default::default();
+
+        let (_, b_idx, _) = self.find_bundle_number_by_bid(&tx, bid)?;
+        {
+            let mut stmt = tx.prepare("SELECT * FROM bundles WHERE id = ?")?;
+            let mut rows = stmt.query([b_idx])?;
+            let row = rows.next()?.expect("bundle id not found in database");
+            be = BundleEntry {
+                src_name: row.get(1)?,
+                src_service: row.get(2)?,
+                dst_name: row.get(3)?,
+                dst_service: row.get(4)?,
+                timestamp: row.get(5)?,
+                seqno: row.get(6)?,
+                lifetime: row.get(7)?,
+                size: row.get(8)?,
+            };
+        }
+        tx.commit()?;
         Ok(be)
     }
     pub fn insert_bulk(&self, bes: &[(String, BundleEntry)]) -> Result<()> {
         let mut conn = self.get_connection()?;
-        //conn.execute("PRAGMA synchronous = OFF;", [])?;
-        //conn.execute("PRAGMA journal_mode = MEMORY;", [])?;
         let tx = conn.transaction()?;
 
         {
@@ -203,7 +214,7 @@ impl D7DB {
             return Ok(());
         }
         let mut conn = self.get_connection()?;
-
+        conn.pragma_update(None, "synchronous", &"OFF".to_string())?;
         let tx = conn.transaction()?;
 
         let mut be: BundleEntry = bndl.into();
@@ -248,23 +259,6 @@ impl D7DB {
         Ok(())
     }
     pub fn exists(&self, bid: &str) -> bool {
-        /*let mut stmt = self
-            .conn
-            .prepare("SELECT COUNT(*) FROM bundles WHERE src_name = ? AND src_service = ? AND timestamp = ? AND seqno = ?")
-            .unwrap();
-        //dbg!(&bid);
-        let cts: Vec<&str> = bid.split('-').collect();
-        let timestamp: u64 = cts[1].parse().unwrap();
-        let seqno: u64 = cts[2].parse().unwrap();
-
-        let (name, service) = if bid.starts_with("dtn") {
-            let mut tmp = cts[0].split('/').skip(2);
-            (tmp.next(), tmp.next())
-        } else {
-            /*let mut tmp = cts[0].split('/').skip(2).collect::<Vec<&str>>().split(".");
-            (tmp.next(), tmp.next())*/
-            unimplemented!();
-        };*/
         let conn = self.get_connection().unwrap();
         let mut stmt = conn
             .prepare("SELECT COUNT(*) FROM bids WHERE bid = ?")
@@ -316,41 +310,59 @@ impl D7DB {
         res
     }
     pub fn set_constraints(&self, bid: &str, constraints: Constraints) -> Result<()> {
-        let (_, _, c_idx) = self.find_bundle_number_by_bid(bid)?;
-        self.get_connection()?.execute(
+        let mut conn = self.get_connection()?;
+        conn.pragma_update(None, "synchronous", &"OFF".to_string())?;
+        let tx = conn.transaction()?;
+        let (_, _, c_idx) = self.find_bundle_number_by_bid(&tx, bid)?;
+        tx.execute(
             "UPDATE constraints 
             SET constraints = ?1
             WHERE id = ?2",
             params![constraints.bits(), c_idx],
         )?;
+        tx.commit()?;
         Ok(())
     }
     pub fn get_constraints(&self, bid: &str) -> Result<Constraints> {
-        let (_, _, c_idx) = self.find_bundle_number_by_bid(bid)?;
-        let conn = self.get_connection()?;
-        let mut stmt = conn.prepare("SELECT constraints FROM constraints WHERE id = ? LIMIT 1")?;
-        let mut rows = stmt.query([c_idx])?;
-        let res = rows
-            .next()
-            .expect("error fetching constraints row")
-            .unwrap()
-            .get(0)
-            .expect("error fetching constraints");
+        let mut conn = self.get_connection()?;
+        let tx = conn.transaction()?;
+        let (_, _, c_idx) = self.find_bundle_number_by_bid(&tx, bid)?;
+        //let conn = self.get_connection()?;
+        let mut res: u32 = 0;
+        {
+            let mut stmt =
+                tx.prepare("SELECT constraints FROM constraints WHERE id = ? LIMIT 1")?;
+            let mut rows = stmt.query([c_idx])?;
+            res = rows
+                .next()
+                .expect("error fetching constraints row")
+                .unwrap()
+                .get(0)
+                .expect("error fetching constraints");
+        }
+        tx.commit()?;
         Ok(Constraints::from_bits(res).expect("could not parse constraint bits"))
     }
     pub fn add_constraints(&self, bid: &str, constraints: Constraints) -> Result<()> {
-        let (_, _, c_idx) = self.find_bundle_number_by_bid(bid)?;
-        self.get_connection()?.execute(
+        let mut conn = self.get_connection()?;
+        conn.pragma_update(None, "synchronous", &"OFF".to_string())?;
+        let tx = conn.transaction()?;
+        let (_, _, c_idx) = self.find_bundle_number_by_bid(&tx, bid)?;
+        tx.execute(
             "UPDATE constraints 
             SET constraints = constraints | ?1
             WHERE id = ?2",
             params![constraints.bits(), c_idx],
         )?;
+        tx.commit()?;
         Ok(())
     }
     pub fn remove_constraints(&self, bid: &str, constraints: Constraints) -> Result<()> {
-        let (_, _, c_idx) = self.find_bundle_number_by_bid(bid)?;
-        self.get_connection()?.execute(
+        let mut conn = self.get_connection()?;
+        conn.pragma_update(None, "synchronous", &"OFF".to_string())?;
+        let tx = conn.transaction()?;
+        let (_, _, c_idx) = self.find_bundle_number_by_bid(&tx, bid)?;
+        tx.execute(
             "UPDATE constraints 
             SET constraints = constraints & (~?1)
             WHERE id = ?2",
@@ -387,23 +399,6 @@ impl D7DB {
     pub fn sync_with_fs(&self, fs: &crate::D7sFs) -> Result<()> {
         info!("syncing db to fs");
 
-        /*let mut stmt = self
-            .conn
-            .prepare("SELECT COUNT(*) FROM bundles WHERE src_name = ? AND src_service = ? AND timestamp = ? AND seqno = ?")
-            .unwrap();
-        //dbg!(&bid);
-        let cts: Vec<&str> = bid.split('-').collect();
-        let timestamp: u64 = cts[1].parse().unwrap();
-        let seqno: u64 = cts[2].parse().unwrap();
-
-        let (name, service) = if bid.starts_with("dtn") {
-            let mut tmp = cts[0].split('/').skip(2);
-            (tmp.next(), tmp.next())
-        } else {
-            /*let mut tmp = cts[0].split('/').skip(2).collect::<Vec<&str>>().split(".");
-            (tmp.next(), tmp.next())*/
-            unimplemented!();
-        };*/
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare("SELECT * FROM bids")?;
         //dbg!(name, service, timestamp, seqno);

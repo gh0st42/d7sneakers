@@ -12,8 +12,6 @@ mod fs;
 
 use std::convert::TryFrom;
 use std::convert::TryInto;
-use std::io::BufReader;
-use std::io::Read;
 use std::path::Path;
 
 pub use db::Constraints;
@@ -131,6 +129,8 @@ impl SneakerWorld {
             }
         }
         self.db.insert_bulk(&bes)?;
+
+        // parallel import was not faster..
         /*let mut handles = Vec::new();
         let stealer = w.stealer();
         for _ in 1..4 {

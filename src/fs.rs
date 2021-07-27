@@ -2,7 +2,6 @@ use anyhow::{bail, Result};
 use bp7::Bundle;
 use log::{debug, error, info};
 use sanitize_filename_reader_friendly::sanitize;
-use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::{convert::TryInto, fs};
 use walkdir::{DirEntry, WalkDir};
