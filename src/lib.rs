@@ -59,6 +59,12 @@ impl SneakerWorld {
         self.fs.remove_bundle(bid)?;
         self.db.delete(bid)
     }
+    pub fn bundle_known(&self, bundle: &Bundle) -> bool {
+        self.db.exists(bundle.id().as_str())
+    }
+    pub fn bid_known(&self, bid: &str) -> bool {
+        self.db.exists(bid)
+    }
     fn import_file(&self, entry: DirEntry) -> Result<Option<(String, BundleEntry)>> {
         let (filebase, _extension) = entry
             .file_name()

@@ -1,6 +1,6 @@
 [package]
 name = "d7sneakers"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Lars Baumgaertner <baumgaertner@cs.tu-darmstadt.de>"]
 edition = "2018"
 description = "A simple file based 'datastore'/sneaker net based upon bp7 (bundle protocol version 7 draft)"
@@ -13,12 +13,17 @@ license = "MIT OR Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+
+default = ['binary-build']
+binary-build = ['clap', 'pretty_env_logger']
+
 [dependencies]
 bp7 = "0.8.1"
-clap = "3.0.0-beta.2"
+clap = {version = "3.0.0-beta.2", optional = true}
 anyhow = "1.0.41"
 log = "0.4.14"
-pretty_env_logger = "0.4.0"
+pretty_env_logger = {version = "0.4.0", optional = true}
 sanitize-filename-reader-friendly = "2.1.0"
 rusqlite = "0.25.3"
 walkdir = "2.3.2"
