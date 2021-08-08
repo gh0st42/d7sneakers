@@ -1,6 +1,6 @@
 [package]
 name = "d7sneakers"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Lars Baumgaertner <baumgaertner@cs.tu-darmstadt.de>"]
 edition = "2018"
 description = "A simple file based 'datastore'/sneaker net based upon bp7 (bundle protocol version 7 draft)"
@@ -19,7 +19,7 @@ default = ['binary-build']
 binary-build = ['clap', 'pretty_env_logger']
 
 [dependencies]
-bp7 = "0.8.1"
+bp7 = "0.8.11"
 clap = {version = "3.0.0-beta.2", optional = true}
 anyhow = "1.0.41"
 log = "0.4.14"

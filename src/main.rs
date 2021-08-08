@@ -106,8 +106,8 @@ fn main() -> Result<()> {
     match opts.subcmds {
         SubCommand::Add(a) => {
             if let Some(input) = a.hex {
-                let (bndl, bundle_size) = sneakers.fs.import_hex(&input)?;
-                sneakers.db.insert(&bndl, bundle_size)?;
+                let (bndl, bundle_size, path) = sneakers.fs.import_hex(&input)?;
+                sneakers.db.insert(&bndl, bundle_size, Some(path))?;
             } else if let Some(path) = a.path {
                 sneakers.import_dir(&path, a.recursive)?;
             }

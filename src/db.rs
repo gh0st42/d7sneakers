@@ -20,13 +20,13 @@ bitflags! {
 
 #[derive(Debug, Clone, Default)]
 pub struct BundleEntry {
-    src_name: Option<String>,
-    src_service: Option<String>,
-    dst_name: Option<String>,
-    dst_service: Option<String>,
-    timestamp: u64,
-    seqno: u64,
-    lifetime: u64,
+    pub src_name: Option<String>,
+    pub src_service: Option<String>,
+    pub dst_name: Option<String>,
+    pub dst_service: Option<String>,
+    pub timestamp: u64,
+    pub seqno: u64,
+    pub lifetime: u64,
     pub size: u64,
 }
 
@@ -102,7 +102,8 @@ impl D7DB {
                       id                INTEGER PRIMARY KEY,
                       bid               TEXT NOT NULL,
                       bundle_idx        INTEGER,
-                      constraints_idx   INTEGER
+                      constraints_idx   INTEGER,
+                      path              TEXT
                       )",
             [],
         )?;
@@ -142,12 +143,13 @@ impl D7DB {
         let mut stmt =
             tx.prepare("SELECT id, bundle_idx, constraints_idx FROM bids WHERE bid = ?")?;
         let mut rows = stmt.query([bid])?;
-        while let Some(row) = rows.next()? {
+        if let Some(row) = rows.next()? {
             let idx: usize = row.get(0)?;
             let bndl_idx: usize = row.get(1)?;
             let constraint_idx: usize = row.get(2)?;
             return Ok((idx, bndl_idx, constraint_idx));
         }
+
         bail!("bundle ID not found in database");
     }
     pub fn get_bundle_entry(&self, bid: &str) -> Result<BundleEntry> {
@@ -175,7 +177,7 @@ impl D7DB {
         tx.commit()?;
         Ok(be)
     }
-    pub fn insert_bulk(&self, bes: &[(String, BundleEntry)]) -> Result<()> {
+    pub fn insert_bulk(&self, bes: &[(String, BundleEntry, Option<String>)]) -> Result<()> {
         let mut conn = self.get_connection()?;
         let tx = conn.transaction()?;
 
@@ -186,9 +188,9 @@ impl D7DB {
                 constraints) VALUES (?1)",
             )?;
             let mut stmt_idx = tx.prepare(
-                "INSERT INTO bids ( bid, bundle_idx, constraints_idx) VALUES ( ?1, ?2, ?3) ",
+                "INSERT INTO bids ( bid, bundle_idx, constraints_idx, path) VALUES ( ?1, ?2, ?3, ?4) ",
             )?;
-            for (bid, be) in bes {
+            for (bid, be, path) in bes {
                 stmt_bundles.execute(params![
                     be.src_name,
                     be.src_service,
@@ -203,13 +205,13 @@ impl D7DB {
                 let last_bundle_id = tx.last_insert_rowid();
                 stmd_contraints.execute(params![0])?;
                 let last_constraint_id = tx.last_insert_rowid();
-                stmt_idx.execute(params![bid, last_bundle_id, last_constraint_id])?;
+                stmt_idx.execute(params![bid, last_bundle_id, last_constraint_id, path])?;
             }
         }
         tx.commit()?;
         Ok(())
     }
-    pub fn insert(&self, bndl: &Bundle, size: u64) -> Result<()> {
+    pub fn insert(&self, bndl: &Bundle, size: u64, path: Option<String>) -> Result<()> {
         if self.exists(&bndl.id()) {
             return Ok(());
         }
@@ -251,8 +253,8 @@ impl D7DB {
         let last_constraint_id = tx.last_insert_rowid();
 
         tx.execute(
-            "INSERT INTO bids ( bid, bundle_idx, constraints_idx) VALUES ( ?1, ?2, ?3) ",
-            params![bndl.id(), last_bundle_id, last_constraint_id],
+            "INSERT INTO bids ( bid, bundle_idx, constraints_idx, path) VALUES ( ?1, ?2, ?3, ?4) ",
+            params![bndl.id(), last_bundle_id, last_constraint_id, path],
         )?;
 
         tx.commit()?;
@@ -272,6 +274,19 @@ impl D7DB {
             };
         }
         false
+    }
+    pub fn path_for_bundle(&self, bid: &str) -> Option<String> {
+        let conn = self.get_connection().unwrap();
+        let mut stmt = conn.prepare("SELECT path FROM bids WHERE bid = ?").unwrap();
+        //dbg!(name, service, timestamp, seqno);
+        let mut rows = stmt.query([bid]).unwrap();
+        if let Some(row) = rows
+            .next()
+            .expect("error getting bundle path from database")
+        {
+            return row.get(0).expect("");
+        }
+        None
     }
     pub fn len(&self) -> usize {
         let conn = self.get_connection().unwrap();
@@ -435,9 +450,9 @@ mod tests {
         //let db = D7DB::new();
         let db = D7DB::open("/tmp/d7s.db").unwrap();
 
-        assert!(db.exists(&test_bundle.id()) == false);
-        db.insert(&test_bundle, 20).unwrap();
-        assert!(db.exists(&test_bundle.id()) == true);
-        db.insert(&test_bundle, 20).unwrap();
+        assert!(!db.exists(&test_bundle.id()));
+        db.insert(&test_bundle, 20, None).unwrap();
+        assert!(db.exists(&test_bundle.id()));
+        db.insert(&test_bundle, 20, None).unwrap();
     }
 }

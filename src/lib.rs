@@ -52,8 +52,8 @@ impl SneakerWorld {
         self.db.sync_with_fs(&self.fs)
     }
     pub fn push(&self, bndl: &mut Bundle) -> Result<()> {
-        let bundle_size = self.fs.save_bundle(bndl)?;
-        self.db.insert(bndl, bundle_size)
+        let (bundle_size, path) = self.fs.save_bundle(bndl)?;
+        self.db.insert(bndl, bundle_size, Some(path))
     }
     pub fn remove(&self, bid: &str) -> Result<()> {
         self.fs.remove_bundle(bid)?;
@@ -65,7 +65,18 @@ impl SneakerWorld {
     pub fn bid_known(&self, bid: &str) -> bool {
         self.db.exists(bid)
     }
-    fn import_file(&self, entry: DirEntry) -> Result<Option<(String, BundleEntry)>> {
+    pub fn get_bundle(&self, bid: &str) -> Result<Bundle> {
+        if let Some(path) = self.db.path_for_bundle(bid) {
+            let buf = std::fs::read(path)?;
+            Ok(buf.try_into()?)
+        } else {
+            anyhow::bail!("unknown bundle");
+        }
+    }
+    fn import_file(
+        &self,
+        entry: DirEntry,
+    ) -> Result<Option<(String, BundleEntry, Option<String>)>> {
         let (filebase, _extension) = entry
             .file_name()
             .to_str()
@@ -85,7 +96,11 @@ impl SneakerWorld {
                 info!("imported {} from {:?}", bndl.id(), entry.path());
                 let mut be = BundleEntry::from(&bndl);
                 be.size = bundle_size as u64;
-                Some((bndl.id(), be))
+                Some((
+                    bndl.id(),
+                    be,
+                    Some(entry.path().to_string_lossy().to_string()),
+                ))
             } else {
                 debug!("{} already in store", &bid);
                 None
@@ -97,12 +112,16 @@ impl SneakerWorld {
                 let bid = bndl.id();
                 let is_in_db = self.db.exists(&bid);
                 if !is_in_db {
-                    let bundle_size = self.fs.save_bundle(&mut bndl)?;
+                    let (bundle_size, _path) = self.fs.save_bundle(&mut bndl)?;
                     //self.db.insert(&bndl, bundle_size)?;
                     info!("imported {} from {:?}", bndl.id(), entry.path());
                     let mut be = BundleEntry::from(&bndl);
                     be.size = bundle_size;
-                    Some((bndl.id(), be))
+                    Some((
+                        bndl.id(),
+                        be,
+                        Some(entry.path().to_string_lossy().to_string()),
+                    ))
                 } else {
                     debug!("{} already in store", bid);
                     None

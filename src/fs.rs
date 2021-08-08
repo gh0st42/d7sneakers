@@ -56,7 +56,13 @@ impl D7sFs {
         basepath.join("group")
     }
     pub fn path_for_bundle(&self, bndl: &Bundle) -> PathBuf {
-        let dst = sanitize(&bndl.primary.destination.node().unwrap_or("none".to_owned()));
+        let dst = sanitize(
+            &bndl
+                .primary
+                .destination
+                .node()
+                .unwrap_or_else(|| "none".to_owned()),
+        );
         if bndl.is_administrative_record() {
             self.path_administrative().join(&dst)
         } else {
@@ -85,10 +91,10 @@ impl D7sFs {
     pub fn exists(&self, bndl: &Bundle) -> bool {
         self.path_for_bundle_with_filename(bndl).exists()
     }
-    pub fn save_bundle(&self, bndl: &mut Bundle) -> Result<u64> {
+    pub fn save_bundle(&self, bndl: &mut Bundle) -> Result<(u64, String)> {
         let bid = bndl.id();
         let filename = format!("{}.bundle", sanitize(&bid));
-        let dest_path = self.path_for_bundle(&bndl);
+        let dest_path = self.path_for_bundle(bndl);
 
         fs::create_dir_all(&dest_path)?;
         let dest_path = dest_path.join(&filename);
@@ -99,7 +105,10 @@ impl D7sFs {
             debug!("saved {} to {}", bid, dest_path.to_string_lossy());
         }
         //info!("filename {}", filename);
-        Ok(fs::metadata(dest_path)?.len())
+        Ok((
+            fs::metadata(&dest_path)?.len(),
+            dest_path.to_string_lossy().into(),
+        ))
     }
     pub fn remove_bundle(&self, bid: &str) -> Result<()> {
         if let Some(filename) = self.find_file_by_bid(bid) {
@@ -211,24 +220,25 @@ impl D7sFs {
                     .ends_with(".bundle")
             })
         {
-            if let Ok(Some(be)) = self.check_file_from_store(entry, db) {
-                bes.push(be);
+            let file_path = entry.path().to_string_lossy().to_string();
+            if let Ok(Some((bid, be))) = self.check_file_from_store(entry, db) {
+                bes.push((bid, be, Some(file_path)));
             }
         }
         db.insert_bulk(&bes)?;
         Ok(())
     }
-    pub fn import_hex(&self, hexstr: &str) -> Result<(Bundle, u64)> {
+    pub fn import_hex(&self, hexstr: &str) -> Result<(Bundle, u64, String)> {
         let mut bndl: Bundle = bp7::helpers::unhexify(hexstr)?.try_into()?;
 
-        let bundle_size = self.save_bundle(&mut bndl)?;
-        Ok((bndl, bundle_size))
+        let (bundle_size, path) = self.save_bundle(&mut bndl)?;
+        Ok((bndl, bundle_size, path))
     }
 
-    pub fn import_vec(&self, buf: Vec<u8>) -> Result<Bundle> {
+    pub fn import_vec(&self, buf: Vec<u8>) -> Result<(Bundle, u64, String)> {
         let mut bndl: Bundle = buf.try_into()?;
 
-        self.save_bundle(&mut bndl)?;
-        Ok(bndl)
+        let (bundle_size, path) = self.save_bundle(&mut bndl)?;
+        Ok((bndl, bundle_size, path))
     }
 }
