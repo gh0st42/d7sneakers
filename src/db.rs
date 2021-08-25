@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use anyhow::{bail, Result};
 use bp7::Bundle;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use rusqlite::{params, Connection, Transaction};
 
 use bitflags::bitflags;
