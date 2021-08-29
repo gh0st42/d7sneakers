@@ -178,8 +178,6 @@ fn main() -> Result<()> {
                 println!("{:#?}", sneakers.db.filter_service(&service));
             } else if let Some(service) = q.group_destinations {
                 println!("{:#?}", sneakers.db.filter_groups(&service));
-            } else {
-                opts.print_usage();
             }
         }
     }
