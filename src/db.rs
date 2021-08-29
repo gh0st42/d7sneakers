@@ -310,6 +310,20 @@ impl D7DB {
         }
         res
     }
+    /// returns a list of known group endpoints
+    pub fn filter_groups(&self, service: &str) -> Vec<String> {
+        let mut res = Vec::new();
+        let conn = self.get_connection().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT dst_name FROM bundles WHERE dst_service LIKE ?1")
+            .unwrap();
+        let mut rows = stmt.query([service]).unwrap();
+        while let Some(row) = rows.next().expect("") {
+            let bid = row.get(0).expect("");
+            res.push(bid);
+        }
+        res
+    }
     /// returns a list of bundle ids where either src or dst is the given node
     pub fn filter_node(&self, node: &str) -> Vec<String> {
         let mut res = Vec::new();
@@ -318,6 +332,34 @@ impl D7DB {
             .prepare("SELECT bid FROM bids INNER JOIN bundles ON bundles.id = bids.bundle_idx WHERE src_name LIKE ?1 OR dst_name LIKE ?1")
             .unwrap();
         let mut rows = stmt.query([node]).unwrap();
+        while let Some(row) = rows.next().expect("") {
+            let bid = row.get(0).expect("");
+            res.push(bid);
+        }
+        res
+    }
+    /// returns a list of bundle ids where either src or dst matches the given service
+    pub fn filter_service(&self, node: &str) -> Vec<String> {
+        let mut res = Vec::new();
+        let conn = self.get_connection().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT bid FROM bids INNER JOIN bundles ON bundles.id = bids.bundle_idx WHERE src_service LIKE ?1 OR dst_service LIKE ?1")
+            .unwrap();
+        let mut rows = stmt.query([node]).unwrap();
+        while let Some(row) = rows.next().expect("") {
+            let bid = row.get(0).expect("");
+            res.push(bid);
+        }
+        res
+    }
+    /// returns a list of bundle ids where either src or dst matches the given name and service
+    pub fn filter_node_and_service(&self, node: &str, service: &str) -> Vec<String> {
+        let mut res = Vec::new();
+        let conn = self.get_connection().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT bid FROM bids INNER JOIN bundles ON bundles.id = bids.bundle_idx WHERE (src_name LIKE ?1 OR dst_name LIKE ?1) AND (src_service LIKE ?2 OR dst_service LIKE ?2)")
+            .unwrap();
+        let mut rows = stmt.query([node, service]).unwrap();
         while let Some(row) = rows.next().expect("") {
             let bid = row.get(0).expect("");
             res.push(bid);

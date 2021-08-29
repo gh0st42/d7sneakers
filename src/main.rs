@@ -33,7 +33,7 @@ enum SubCommand {
 #[derive(Clap)]
 struct Add {
     /// Add bundle provided as hex string
-    #[clap(short, long)]
+    #[clap(short = 'H', long)]
     hex: Option<String>,
     /// Add bundles from a directory
     #[clap(short, long)]
@@ -84,6 +84,12 @@ struct Query {
     /// list all bundle IDs with either src or dst matching node query
     #[clap(short, long)]
     query_node: Option<String>,
+    /// filter all bundle IDs with either src or dst service matching filter string
+    #[clap(short = 'F', long)]
+    filter_service: Option<String>,
+    /// return a list of known group destinations matching a specific service
+    #[clap(short, long)]
+    group_destinations: Option<String>,
 }
 fn main() -> Result<()> {
     let opts: Opts = Opts::parse();
@@ -160,7 +166,20 @@ fn main() -> Result<()> {
                     sneakers.db.filter_constraints(Constraints::LOCAL_ENDPOINT)
                 );
             } else if let Some(node) = q.query_node {
-                println!("{:#?}", sneakers.db.filter_node(&node));
+                if let Some(service) = q.filter_service {
+                    println!(
+                        "{:#?}",
+                        sneakers.db.filter_node_and_service(&node, &service)
+                    );
+                } else {
+                    println!("{:#?}", sneakers.db.filter_node(&node));
+                }
+            } else if let Some(service) = q.filter_service {
+                println!("{:#?}", sneakers.db.filter_service(&service));
+            } else if let Some(service) = q.group_destinations {
+                println!("{:#?}", sneakers.db.filter_groups(&service));
+            } else {
+                opts.print_usage();
             }
         }
     }
