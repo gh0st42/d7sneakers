@@ -1,13 +1,12 @@
 use anyhow::Result;
-use clap::{crate_authors, crate_version, AppSettings, Clap};
+use clap::{crate_authors, crate_version, AppSettings, Parser};
 use d7sneakers::{Constraints, SneakerWorld};
 extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(version = crate_version!(), author = crate_authors!())]
-#[clap(setting = AppSettings::ColoredHelp)]
 struct Opts {
     /// Sets a custom config file.
     //#[clap(short, long, default_value = "default.conf")]
@@ -22,7 +21,7 @@ struct Opts {
     subcmds: SubCommand,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 enum SubCommand {
     //#[clap(version = "1.3", author = "Someone E. <someone_else@other.com>")]
     Add(Add),
@@ -30,7 +29,7 @@ enum SubCommand {
     Query(Query),
 }
 /// Add bundles in various forms
-#[derive(Clap)]
+#[derive(Parser)]
 struct Add {
     /// Add bundle provided as hex string
     #[clap(short = 'H', long)]
@@ -44,7 +43,7 @@ struct Add {
 }
 
 /// Perform various maintenance tasks on the system
-#[derive(Clap)]
+#[derive(Parser)]
 struct Sys {
     /// reparse filesystem
     #[clap(short, long)]
@@ -55,7 +54,7 @@ struct Sys {
 }
 
 /// Query the database
-#[derive(Clap)]
+#[derive(Parser)]
 struct Query {
     /// list all bundle ids
     #[clap(short, long)]
