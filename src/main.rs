@@ -1,12 +1,12 @@
 use anyhow::Result;
-use clap::{crate_authors, crate_version, AppSettings, Parser};
+use clap::{AppSettings, Parser};
 use d7sneakers::{Constraints, SneakerWorld};
 extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 
 #[derive(Parser)]
-#[clap(version = crate_version!(), author = crate_authors!())]
+#[clap(version, author)]
 struct Opts {
     /// Sets a custom config file.
     //#[clap(short, long, default_value = "default.conf")]
