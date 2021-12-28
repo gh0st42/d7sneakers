@@ -1,4 +1,8 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{bail, Result};
 use bp7::Bundle;
@@ -24,9 +28,10 @@ pub struct BundleEntry {
     pub src_service: Option<String>,
     pub dst_name: Option<String>,
     pub dst_service: Option<String>,
-    pub timestamp: u64,
+    pub creation_time: u64,
     pub seqno: u64,
     pub lifetime: u64,
+    pub time_added_to_db: u64,
     pub size: u64,
 }
 
@@ -39,9 +44,13 @@ impl From<&Bundle> for BundleEntry {
             src_service: bundle.primary.source.service_name(),
             dst_name: bundle.primary.destination.node(),
             dst_service: bundle.primary.destination.service_name(),
-            timestamp: bundle.primary.creation_timestamp.dtntime(),
+            creation_time: bundle.primary.creation_timestamp.dtntime(),
             seqno: bundle.primary.creation_timestamp.seqno(),
             lifetime: bundle.primary.lifetime.as_secs(),
+            time_added_to_db: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_millis() as u64,
             size: 0,
         }
     }
@@ -89,9 +98,10 @@ impl D7DB {
                       src_service     TEXT,
                       dst_name        TEXT,
                       dst_service     TEXT,
-                      timestamp       INTEGER,
+                      creation_time       INTEGER,
                       seqno           INTEGER,
                       lifetime        INTEGER,
+                      time_added_to_db INTEGER,
                       size            INTEGER
                       )",
             [],
@@ -168,10 +178,11 @@ impl D7DB {
                 src_service: row.get(2)?,
                 dst_name: row.get(3)?,
                 dst_service: row.get(4)?,
-                timestamp: row.get(5)?,
+                creation_time: row.get(5)?,
                 seqno: row.get(6)?,
                 lifetime: row.get(7)?,
-                size: row.get(8)?,
+                time_added_to_db: row.get(8)?,
+                size: row.get(9)?,
             };
         }
         tx.commit()?;
@@ -182,7 +193,7 @@ impl D7DB {
         let tx = conn.transaction()?;
 
         {
-            let mut stmt_bundles = tx.prepare("INSERT INTO bundles (src_name, src_service, dst_name, dst_service, timestamp, seqno, lifetime, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")?;
+            let mut stmt_bundles = tx.prepare("INSERT INTO bundles (src_name, src_service, dst_name, dst_service, creation_time, seqno, lifetime, time_added_to_db, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")?;
             let mut stmd_contraints = tx.prepare(
                 "INSERT INTO constraints (
                 constraints) VALUES (?1)",
@@ -196,9 +207,10 @@ impl D7DB {
                     be.src_service,
                     be.dst_name,
                     be.dst_service,
-                    be.timestamp,
+                    be.creation_time,
                     be.seqno,
                     be.lifetime,
+                    be.time_added_to_db,
                     be.size,
                 ])?;
 
@@ -228,18 +240,20 @@ impl D7DB {
                 src_service,
                 dst_name,
                 dst_service,
-                timestamp,
+                creation_time,
                 seqno,
                 lifetime,
-                size) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                time_added_to_db,
+                size) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 be.src_name,
                 be.src_service,
                 be.dst_name,
                 be.dst_service,
-                be.timestamp,
+                be.creation_time,
                 be.seqno,
                 be.lifetime,
+                be.time_added_to_db,
                 be.size
             ],
         )?;
