@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{AppSettings, Parser};
+use clap::Parser;
 use d7sneakers::{Constraints, SneakerWorld};
 extern crate pretty_env_logger;
 #[macro_use]
