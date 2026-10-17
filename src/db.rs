@@ -166,14 +166,14 @@ impl D7DB {
         let mut conn = self.get_connection()?;
         conn.pragma_update(None, "synchronous", &"OFF".to_string())?;
         let tx = conn.transaction()?;
-        let mut be: BundleEntry = Default::default();
 
         let (_, b_idx, _) = self.find_bundle_number_by_bid(&tx, bid)?;
-        {
+        // the statement borrows the transaction and must be dropped before committing
+        let be = {
             let mut stmt = tx.prepare("SELECT * FROM bundles WHERE id = ?")?;
             let mut rows = stmt.query([b_idx])?;
             let row = rows.next()?.expect("bundle id not found in database");
-            be = BundleEntry {
+            BundleEntry {
                 src_name: row.get(1)?,
                 src_service: row.get(2)?,
                 dst_name: row.get(3)?,
@@ -183,8 +183,8 @@ impl D7DB {
                 lifetime: row.get(7)?,
                 time_added_to_db: row.get(8)?,
                 size: row.get(9)?,
-            };
-        }
+            }
+        };
         tx.commit()?;
         Ok(be)
     }
@@ -398,19 +398,17 @@ impl D7DB {
         let mut conn = self.get_connection()?;
         let tx = conn.transaction()?;
         let (_, _, c_idx) = self.find_bundle_number_by_bid(&tx, bid)?;
-        //let conn = self.get_connection()?;
-        let mut res: u32 = 0;
-        {
+        // the statement borrows the transaction and must be dropped before committing
+        let res: u32 = {
             let mut stmt =
                 tx.prepare("SELECT constraints FROM constraints WHERE id = ? LIMIT 1")?;
             let mut rows = stmt.query([c_idx])?;
-            res = rows
-                .next()
+            rows.next()
                 .expect("error fetching constraints row")
                 .unwrap()
                 .get(0)
-                .expect("error fetching constraints");
-        }
+                .expect("error fetching constraints")
+        };
         tx.commit()?;
         Ok(Constraints::from_bits(res).expect("could not parse constraint bits"))
     }
